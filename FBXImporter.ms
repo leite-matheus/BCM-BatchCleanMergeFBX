@@ -466,29 +466,80 @@ fn BCM_MergeByMaterial = (
                 baseMesh.name = "Merged_NoMaterial"
                 select baseMesh
                 
-                -- Attach all other objects to the base mesh
+                -- Attempt to merge objects safely
+                local mergeSuccesses = 0
+                local mergeFailures = 0
+                
                 for j = 2 to noMaterialObjects.count do (
                     try (
-                        -- Use Edit_Mesh modifier for meshes
-                        if classOf baseMesh == Editable_Mesh then (
-                            modPanel.addModToSelection (Edit_Mesh()) ui:off
-                            meshop.attach baseMesh noMaterialObjects[j] attachMat:#idToMat
-                        )
-                        -- Use Edit_Poly modifier for poly objects
-                        else if classOf baseMesh == Editable_Poly then (
-                            modPanel.addModToSelection (Edit_Poly()) ui:off
-                            polyop.attach baseMesh noMaterialObjects[j]
-                        )
-                        -- For other geometry types
-                        else (
-                            convertTo baseMesh Editable_Mesh
-                            modPanel.addModToSelection (Edit_Mesh()) ui:off
-                            meshop.attach baseMesh noMaterialObjects[j] attachMat:#idToMat
+                        local targetObj = noMaterialObjects[j]
+                        
+                        -- Safety check - make sure both objects still exist
+                        if (isValidNode baseMesh) and (isValidNode targetObj) then (
+                            -- Use Edit_Mesh modifier for meshes
+                            if classOf baseMesh == Editable_Mesh then (
+                                modPanel.addModToSelection (Edit_Mesh()) ui:off
+                                try (
+                                    meshop.attach baseMesh targetObj attachMat:#idToMat
+                                    mergeSuccesses += 1
+                                ) catch (
+                                    -- Alternative method - convert both to Editable_Poly then try
+                                    try (
+                                        convertTo baseMesh Editable_Poly
+                                        convertTo targetObj Editable_Poly
+                                        polyop.attach baseMesh targetObj
+                                        mergeSuccesses += 1
+                                    ) catch (
+                                        format "Warning: Failed to attach no-material object % after conversion to Poly. Error: %\n" targetObj.name (getCurrentException())
+                                        mergeFailures += 1
+                                    )
+                                )
+                            )
+                            -- Use Edit_Poly modifier for poly objects
+                            else if classOf baseMesh == Editable_Poly then (
+                                modPanel.addModToSelection (Edit_Poly()) ui:off
+                                try (
+                                    polyop.attach baseMesh targetObj
+                                    mergeSuccesses += 1
+                                ) catch (
+                                    format "Warning: Failed to attach no-material object % to poly mesh. Error: %\n" targetObj.name (getCurrentException())
+                                    mergeFailures += 1
+                                )
+                            )
+                            -- For other geometry types
+                            else (
+                                try (
+                                    -- Try to convert first
+                                    convertTo baseMesh Editable_Poly
+                                    convertTo targetObj Editable_Poly
+                                    modPanel.addModToSelection (Edit_Poly()) ui:off
+                                    polyop.attach baseMesh targetObj
+                                    mergeSuccesses += 1
+                                ) catch (
+                                    -- Fall back to mesh as a last resort
+                                    try (
+                                        convertTo baseMesh Editable_Mesh
+                                        convertTo targetObj Editable_Mesh
+                                        modPanel.addModToSelection (Edit_Mesh()) ui:off
+                                        meshop.attach baseMesh targetObj attachMat:#idToMat
+                                        mergeSuccesses += 1
+                                    ) catch (
+                                        format "Warning: Failed to attach no-material object % after multiple conversion attempts. Error: %\n" targetObj.name (getCurrentException())
+                                        mergeFailures += 1
+                                    )
+                                )
+                            )
+                        ) else (
+                            format "Warning: Skipping attachment - one of the no-material objects is no longer valid\n"
+                            mergeFailures += 1
                         )
                     ) catch (
-                        format "Warning: Failed to attach object % to base mesh. Error: %\n" noMaterialObjects[j].name (getCurrentException())
+                        format "Warning: Failed to attach no-material object % to base mesh. Error: %\n" noMaterialObjects[j].name (getCurrentException())
+                        mergeFailures += 1
                     )
                 )
+                
+                format "Merged % no-material objects successfully, % objects failed to merge\n" mergeSuccesses mergeFailures
                 
                 append mergedObjects baseMesh
             )
