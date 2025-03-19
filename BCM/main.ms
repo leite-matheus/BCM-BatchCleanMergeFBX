@@ -1,23 +1,13 @@
 /*
  * Comprehensive Scene Cleaner, Merger, and Importer
  * Combines scene cleanup, object merging by material, and FBX import functionality
- * 
- * Features:
- * 1. Import FBX files individually or in batches
- * 2. Delete all unnecessary objects (shapes, lights, cameras, helpers, etc.)
- * 3. Automatically select remaining geometry for merging
- * 4. Always processes objects in batches for optimal memory management
  */
 
--- Include necessary script files
-fileIn "cleaner.ms"
-fileIn "merge.ms"
-fileIn "importer.ms"
+-- Define a standard directory where all scripts should be located
+global scriptDirectory = getFilenamePath (getSourceFileName())
 
--- Global utility function to update progress dialog
+-- Define the global function for updating progress first
 global updateProgress
-
--- Define the global function for updating progress
 fn updateProgress progressDialog percent statusText = (
     if progressDialog != undefined and progressDialog.created then (
         try (
@@ -29,6 +19,55 @@ fn updateProgress progressDialog percent statusText = (
             format "Error updating progress: %\n" (getCurrentException())
         )
     )
+)
+
+-- Simple function to load script files with error handling
+fn loadScriptFile filename = (
+    local filePath = pathConfig.appendPath scriptDirectory filename
+    local success = false
+    
+    if doesFileExist filePath then (
+        try (
+            fileIn filePath
+            format "Successfully loaded: %\n" filename
+            success = true
+        ) catch (
+            local errorMsg = getCurrentException()
+            format "Error loading %: %\n" filename errorMsg
+            messageBox ("Failed to load " + filename + ":\n\n" + errorMsg) title:"Script Loading Error"
+        )
+    ) else (
+        format "Script file not found: %\n" filePath
+        messageBox ("Script file not found:\n" + filePath) title:"Missing File"
+    )
+    
+    success
+)
+
+-- Force a complete garbage collection before loading scripts
+gc()
+clearListener()
+
+format "\n=== Starting Script Load ===\n"
+format "Script directory: %\n" scriptDirectory
+
+-- Define global tracking variables
+global cleanerLoaded = false
+global mergeLoaded = false
+global importerLoaded = false
+
+-- Load script files in the correct order
+cleanerLoaded = loadScriptFile "cleaner.ms"
+mergeLoaded = loadScriptFile "merge.ms"
+importerLoaded = loadScriptFile "importer.ms"
+
+-- Check if all required scripts were loaded
+if not (cleanerLoaded and mergeLoaded and importerLoaded) then (
+    messageBox "One or more required scripts could not be loaded. The tool may not function correctly." title:"Script Loading Error"
+    format "Script loading status:\n"
+    format "  cleaner.ms: %\n" cleanerLoaded
+    format "  merge.ms: %\n" mergeLoaded
+    format "  importer.ms: %\n" importerLoaded
 )
 
 -- Main function to run both cleaning and merging operations
@@ -46,7 +85,7 @@ fn cleanAndMergeScene = (
 
 -- Create the tool UI directly
 fn showMainToolUI = (
-    rollout mainToolRollout "Scene Processing Tools" width:300 height:250 (
+    rollout mainToolRollout "Scene Processing Tools" width:300 height:280 (
         groupBox grpActions "Available Actions" pos:[10,10] width:280 height:180
         
         button btnImport "Import FBX Files" pos:[20,40] width:260 height:35
@@ -55,25 +94,56 @@ fn showMainToolUI = (
         
         button btnRunAll "Import, Clean & Merge" pos:[20,200] width:260 height:40
         
+        label lblStatus "All scripts loaded successfully" pos:[10,250] width:280 height:20
+        
+        -- Initialize UI
+        on mainToolRollout open do (
+            if not (cleanerLoaded and mergeLoaded and importerLoaded) then (
+                lblStatus.text = "Warning: Not all scripts loaded correctly!"
+                -- Don't use textColor property, it's not supported in some 3ds Max versions
+                -- Use this instead:
+                try(lblStatus.fgcolor = (color 255 0 0)) catch()
+            ) else (
+                lblStatus.text = "All scripts loaded successfully"
+                try(lblStatus.fgcolor = (color 0 150 0)) catch()
+            )
+        )
+        
         -- Button event handlers
         on btnImport pressed do (
-            destroyDialog mainToolRollout
-            showImportSettingsDialog()
+            if importerLoaded then (
+                destroyDialog mainToolRollout
+                showImportSettingsDialog()
+            ) else (
+                messageBox "Import functionality unavailable: script not loaded." title:"Error"
+            )
         )
         
         on btnClean pressed do (
-            destroyDialog mainToolRollout
-            deleteAllUnwantedObjects()
+            if cleanerLoaded then (
+                destroyDialog mainToolRollout
+                deleteAllUnwantedObjects()
+            ) else (
+                messageBox "Clean functionality unavailable: script not loaded." title:"Error"
+            )
         )
         
         on btnMerge pressed do (
-            destroyDialog mainToolRollout
-            mergeByMaterial (getCurrentSelection())
+            if mergeLoaded then (
+                destroyDialog mainToolRollout
+                mergeByMaterial (getCurrentSelection())
+            ) else (
+                messageBox "Merge functionality unavailable: script not loaded." title:"Error"
+            )
         )
         
         on btnRunAll pressed do (
-            destroyDialog mainToolRollout
-            showImportSettingsDialog()
+            if importerLoaded then (
+                destroyDialog mainToolRollout
+                showImportSettingsDialog()
+            ) else (
+                messageBox "Import functionality unavailable: script not loaded." title:"Error"
+            )
         )
     )
     
@@ -84,44 +154,46 @@ fn showMainToolUI = (
     createDialog mainToolRollout
 )
 
--- Register macroscripts for toolbar buttons
-macroscript FBXImporterTool
-    category:"Processing Tools"
-    toolTip:"Import FBX Files"
-    buttonText:"Import FBX"
-(
-    on execute do (
-        showImportSettingsDialog()
+-- Register macroscripts for toolbar buttons only if scripts are loaded
+if cleanerLoaded and mergeLoaded and importerLoaded then (
+    macroscript FBXImporterTool
+        category:"Processing Tools"
+        toolTip:"Import FBX Files"
+        buttonText:"Import FBX"
+    (
+        on execute do (
+            showImportSettingsDialog()
+        )
     )
-)
 
-macroscript SceneCleanerTool
-    category:"Processing Tools"
-    toolTip:"Clean Current Scene"
-    buttonText:"Clean Scene"
-(
-    on execute do (
-        deleteAllUnwantedObjects()
+    macroscript SceneCleanerTool
+        category:"Processing Tools"
+        toolTip:"Clean Current Scene"
+        buttonText:"Clean Scene"
+    (
+        on execute do (
+            deleteAllUnwantedObjects()
+        )
     )
-)
 
-macroscript MaterialMergerTool
-    category:"Processing Tools"
-    toolTip:"Merge By Material"
-    buttonText:"Merge Objects"
-(
-    on execute do (
-        mergeByMaterial (getCurrentSelection())
+    macroscript MaterialMergerTool
+        category:"Processing Tools"
+        toolTip:"Merge By Material"
+        buttonText:"Merge Objects"
+    (
+        on execute do (
+            mergeByMaterial (getCurrentSelection())
+        )
     )
-)
 
-macroscript AllProcessingTool
-    category:"Processing Tools"
-    toolTip:"Complete Processing"
-    buttonText:"All Processing"
-(
-    on execute do (
-        showMainToolUI()
+    macroscript AllProcessingTool
+        category:"Processing Tools"
+        toolTip:"Complete Processing"
+        buttonText:"All Processing"
+    (
+        on execute do (
+            showMainToolUI()
+        )
     )
 )
 

@@ -101,8 +101,46 @@ fn sortFilesByMode fileArray sortMode = (
     fileArray
 )
 
+-- Make sure the required functions exist before using them
+fn checkRequiredFunctions = (
+    local missingFunctions = #()
+    
+    -- Using try/catch instead of isFunction
+    try (
+        -- Test if the function exists by trying to get its value
+        local testFunc = deleteAllUnwantedObjects
+        -- If we get here, the function exists
+    ) catch (
+        -- If we get an error, the function doesn't exist
+        append missingFunctions "deleteAllUnwantedObjects"
+    )
+    
+    try (
+        -- Test if the function exists by trying to get its value
+        local testFunc = mergeByMaterial
+        -- If we get here, the function exists
+    ) catch (
+        -- If we get an error, the function doesn't exist
+        append missingFunctions "mergeByMaterial"
+    )
+    
+    missingFunctions
+)
+
 -- Process batch import of multiple FBX files
 fn batchImportFBX fileArray sortMode saveCleanedFiles cleanAfterImport mergeAfterClean = (
+    -- Check if required functions are available
+    local missingFunctions = checkRequiredFunctions()
+    if missingFunctions.count > 0 then (
+        local errorMsg = "The following required functions are missing:\n"
+        for func in missingFunctions do (
+            errorMsg += "- " + func + "\n"
+        )
+        errorMsg += "\nPlease make sure all script files are correctly loaded."
+        messageBox errorMsg title:"Missing Functions"
+        return false
+    )
+    
     -- Initialize import status
     gImportStatus = ImportStatus()
     gImportStatus.totalFiles = fileArray.count
@@ -160,51 +198,55 @@ fn batchImportFBX fileArray sortMode saveCleanedFiles cleanAfterImport mergeAfte
                 -- Update status
                 updateProgress progressDialog ((100.0 * i - 0.5) / fileArray.count) "Cleaning imported scene..."
                 
-                -- Run scene cleaner - verify function exists
-                local remainingGeometry = undefined
-                if (isFunction deleteAllUnwantedObjects) then (
-                    remainingGeometry = deleteAllUnwantedObjects()
-                ) else (
-                    format "*** ERROR: deleteAllUnwantedObjects function not defined!\n"
-                    continue
-                )
-                
-                -- If merge requested and we have geometry, run merge
-                if mergeAfterClean and remainingGeometry != undefined and remainingGeometry.count > 0 then (
-                    updateProgress progressDialog ((100.0 * i - 0.25) / fileArray.count) "Merging objects by material..."
+                -- Make sure the function exists before calling it
+                try (
+                    -- Run scene cleaner
+                    local remainingGeometry = deleteAllUnwantedObjects()
                     
-                    -- Verify the mergeByMaterial function exists
-                    if (isFunction mergeByMaterial) then (
-                        -- Explicitly select the geometry objects first to ensure they're available
-                        clearSelection()
-                        select remainingGeometry
+                    -- If merge requested and we have geometry, run merge
+                    if mergeAfterClean and remainingGeometry != undefined and remainingGeometry.count > 0 then (
+                        updateProgress progressDialog ((100.0 * i - 0.25) / fileArray.count) "Merging objects by material..."
                         
+                        -- Make sure the function exists before calling it
                         try (
-                            -- Call merge with specific array of objects
-                            local mergeSuccess = mergeByMaterial remainingGeometry
+                            -- Explicitly select the geometry objects first to ensure they're available
+                            clearSelection()
+                            select remainingGeometry
                             
-                            -- Check if merge was successful
-                            if not mergeSuccess then (
-                                format "*** WARNING: Merge operation failed or did not complete for %\n" currentFile
+                            try (
+                                -- Call merge with specific array of objects
+                                local mergeSuccess = mergeByMaterial remainingGeometry
+                                
+                                -- Check if merge was successful
+                                if not mergeSuccess then (
+                                    format "*** WARNING: Merge operation failed or did not complete for %\n" currentFile
+                                )
+                            ) catch (
+                                local mergeError = getCurrentException()
+                                format "*** ERROR during merge operation: %\n" mergeError
                             )
                         ) catch (
-                            local mergeError = getCurrentException()
-                            format "*** ERROR during merge operation: %\n" mergeError
+                            format "*** ERROR: mergeByMaterial function not found or error calling it!\n"
                         )
-                    ) else (
-                        format "*** ERROR: mergeByMaterial function not defined!\n"
                     )
-                )
-                
-                -- If save requested, save the file
-                if saveCleanedFiles do (
-                    -- Create output filename (same as input but .max extension)
-                    local outputPath = getFilenamePath currentFile + getFilenameFile currentFile + ".max"
                     
-                    -- Save the file
-                    updateProgress progressDialog ((100.0 * i - 0.1) / fileArray.count) "Saving processed file..."
-                    saveMaxFile outputPath useNewFile:false quiet:true
-                    format "Saved processed file to %\n" outputPath
+                    -- If save requested, save the file
+                    if saveCleanedFiles do (
+                        -- Create output filename (same as input but .max extension)
+                        local outputPath = getFilenamePath currentFile + getFilenameFile currentFile + ".max"
+                        
+                        -- Save the file
+                        updateProgress progressDialog ((100.0 * i - 0.1) / fileArray.count) "Saving processed file..."
+                        try (
+                            saveMaxFile outputPath quiet:true
+                            format "Saved processed file to %\n" outputPath
+                        ) catch (
+                            local saveError = getCurrentException()
+                            format "*** ERROR saving file to %: %\n" outputPath saveError
+                        )
+                    )
+                ) catch (
+                    format "*** ERROR: deleteAllUnwantedObjects function not found or error calling it!\n"
                 )
             ) catch (
                 local processingError = getCurrentException()
