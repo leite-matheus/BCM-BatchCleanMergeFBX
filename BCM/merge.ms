@@ -8,13 +8,42 @@ global updateProgress
 
 fn mergeByMaterial inputObjects = (
     -- If no objects passed, use current selection
-    local selectedObjects = if inputObjects != undefined then inputObjects else getCurrentSelection()
+    local selectedObjects = #()
     
-    -- Check if anything is selected
+    -- Check if inputObjects is valid and not empty
+    if inputObjects != undefined then (
+        if classOf inputObjects == Array then (
+            selectedObjects = inputObjects
+        ) else (
+            -- Try to convert single object to array
+            selectedObjects = #(inputObjects)
+        )
+    ) else (
+        -- Fall back to current selection if no valid input
+        selectedObjects = getCurrentSelection()
+    )
+    
+    -- Verify the objects collection isn't empty
     if selectedObjects.count == 0 then (
         messageBox "No objects available for merging. Run cleanup first or manually select objects." title:"No Selection"
         return false
     )
+    
+    -- Filter out non-geometry objects immediately
+    local geometryObjects = #()
+    for obj in selectedObjects do (
+        if superClassOf obj == GeometryClass then (
+            append geometryObjects obj
+        )
+    )
+    
+    if geometryObjects.count == 0 then (
+        messageBox "No valid geometry objects found in selection." title:"No Geometry"
+        return false
+    )
+    
+    -- Use filtered geometry objects for processing
+    selectedObjects = geometryObjects
     
     -- Create progress dialog rollout
     local progressDialog = rollout progressDialog "Merge Progress" width:400 height:100 (
@@ -38,8 +67,8 @@ fn mergeByMaterial inputObjects = (
     
     -- Group objects by material name with pre-filtering of invalid objects
     for obj in selectedObjects do (
-        -- Skip non-geometry objects and objects with no material immediately
-        if (not superClassOf obj == GeometryClass) or (obj.material == undefined) then continue
+        -- Skip objects with no material immediately
+        if obj.material == undefined then continue
         
         validObjectCount += 1
         local matName = obj.material.name
@@ -74,14 +103,19 @@ fn mergeByMaterial inputObjects = (
     
     -- Allow user to configure batch size for very large scenes
     if validObjectCount > 1000 then (
-        local batchSizeResponse = inputBox "Enter batch size for processing (smaller = less memory used but slower):" "25" title:"Configure Processing"
-        if batchSizeResponse != undefined then (
-            try (
-                batchSize = batchSizeResponse as integer
-                if batchSize < 5 then batchSize = 5
-                if batchSize > 100 then batchSize = 100
-            ) catch (
-                batchSize = 25
+        local batchSizeResponse = queryBox "Scene has many objects. Use default batch size (25)?\nYes = Use default, No = Configure" title:"Configure Processing"
+        
+        if not batchSizeResponse then (
+            local batchSizeValue = inputBox "Enter batch size for processing (smaller = less memory used but slower):" "25" title:"Configure Processing"
+            
+            if batchSizeValue != undefined then (
+                try (
+                    batchSize = batchSizeValue as integer
+                    if batchSize < 5 then batchSize = 5
+                    if batchSize > 100 then batchSize = 100
+                ) catch (
+                    batchSize = 25 -- Default if conversion fails
+                )
             )
         )
     )
@@ -122,7 +156,12 @@ fn mergeByMaterial inputObjects = (
                 
                 -- Convert base mesh to Editable_Poly
                 if classOf baseMesh != Editable_Poly then (
-                    convertTo baseMesh Editable_Poly
+                    try (
+                        convertTo baseMesh Editable_Poly
+                    ) catch (
+                        format "Warning: Could not convert % to Editable_Poly. Skipping group.\n" baseMesh.name
+                        continue
+                    )
                 )
                 
                 -- Calculate number of batches needed

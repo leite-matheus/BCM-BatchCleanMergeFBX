@@ -62,6 +62,25 @@ fn importSingleFBX filePath progressDialog = (
     #(success, errorMessage)
 )
 
+-- Helper function for alphabetical sorting - DEFINE BEFORE IT'S USED
+fn alphabeticalSort a b = (
+    stricmp a b
+)
+
+-- Helper function for size ascending sorting - DEFINE BEFORE IT'S USED
+fn sizeAscendingSort a b = (
+    local aInfo = dotNetObject "System.IO.FileInfo" a
+    local bInfo = dotNetObject "System.IO.FileInfo" b
+    aInfo.Length < bInfo.Length
+)
+
+-- Helper function for size descending sorting - DEFINE BEFORE IT'S USED
+fn sizeDescendingSort a b = (
+    local aInfo = dotNetObject "System.IO.FileInfo" a
+    local bInfo = dotNetObject "System.IO.FileInfo" b
+    aInfo.Length > bInfo.Length
+)
+
 -- Sort files by name or size
 fn sortFilesByMode fileArray sortMode = (
     case sortMode of (
@@ -80,25 +99,6 @@ fn sortFilesByMode fileArray sortMode = (
     )
     
     fileArray
-)
-
--- Helper function for alphabetical sorting
-fn alphabeticalSort a b = (
-    stricmp a b
-)
-
--- Helper function for size ascending sorting
-fn sizeAscendingSort a b = (
-    local aInfo = dotNetObject "System.IO.FileInfo" a
-    local bInfo = dotNetObject "System.IO.FileInfo" b
-    aInfo.Length < bInfo.Length
-)
-
--- Helper function for size descending sorting
-fn sizeDescendingSort a b = (
-    local aInfo = dotNetObject "System.IO.FileInfo" a
-    local bInfo = dotNetObject "System.IO.FileInfo" b
-    aInfo.Length > bInfo.Length
 )
 
 -- Process batch import of multiple FBX files
@@ -156,27 +156,59 @@ fn batchImportFBX fileArray sortMode saveCleanedFiles cleanAfterImport mergeAfte
         
         -- If import successful and clean requested, run cleaning
         if importSuccess and cleanAfterImport do (
-            -- Update status
-            updateProgress progressDialog ((100.0 * i - 0.5) / fileArray.count) "Cleaning imported scene..."
-            
-            -- Run scene cleaner
-            local remainingGeometry = deleteAllUnwantedObjects()
-            
-            -- If merge requested and we have geometry, run merge
-            if mergeAfterClean and remainingGeometry != undefined and remainingGeometry.count > 0 then (
-                updateProgress progressDialog ((100.0 * i - 0.25) / fileArray.count) "Merging objects by material..."
-                mergeByMaterial remainingGeometry
-            )
-            
-            -- If save requested, save the file
-            if saveCleanedFiles do (
-                -- Create output filename (same as input but .max extension)
-                local outputPath = getFilenamePath currentFile + getFilenameFile currentFile + ".max"
+            try (
+                -- Update status
+                updateProgress progressDialog ((100.0 * i - 0.5) / fileArray.count) "Cleaning imported scene..."
                 
-                -- Save the file
-                updateProgress progressDialog ((100.0 * i - 0.1) / fileArray.count) "Saving processed file..."
-                saveMaxFile outputPath useNewFile:false quiet:true
-                format "Saved processed file to %\n" outputPath
+                -- Run scene cleaner - verify function exists
+                local remainingGeometry = undefined
+                if (isFunction deleteAllUnwantedObjects) then (
+                    remainingGeometry = deleteAllUnwantedObjects()
+                ) else (
+                    format "*** ERROR: deleteAllUnwantedObjects function not defined!\n"
+                    continue
+                )
+                
+                -- If merge requested and we have geometry, run merge
+                if mergeAfterClean and remainingGeometry != undefined and remainingGeometry.count > 0 then (
+                    updateProgress progressDialog ((100.0 * i - 0.25) / fileArray.count) "Merging objects by material..."
+                    
+                    -- Verify the mergeByMaterial function exists
+                    if (isFunction mergeByMaterial) then (
+                        -- Explicitly select the geometry objects first to ensure they're available
+                        clearSelection()
+                        select remainingGeometry
+                        
+                        try (
+                            -- Call merge with specific array of objects
+                            local mergeSuccess = mergeByMaterial remainingGeometry
+                            
+                            -- Check if merge was successful
+                            if not mergeSuccess then (
+                                format "*** WARNING: Merge operation failed or did not complete for %\n" currentFile
+                            )
+                        ) catch (
+                            local mergeError = getCurrentException()
+                            format "*** ERROR during merge operation: %\n" mergeError
+                        )
+                    ) else (
+                        format "*** ERROR: mergeByMaterial function not defined!\n"
+                    )
+                )
+                
+                -- If save requested, save the file
+                if saveCleanedFiles do (
+                    -- Create output filename (same as input but .max extension)
+                    local outputPath = getFilenamePath currentFile + getFilenameFile currentFile + ".max"
+                    
+                    -- Save the file
+                    updateProgress progressDialog ((100.0 * i - 0.1) / fileArray.count) "Saving processed file..."
+                    saveMaxFile outputPath useNewFile:false quiet:true
+                    format "Saved processed file to %\n" outputPath
+                )
+            ) catch (
+                local processingError = getCurrentException()
+                format "*** ERROR during processing file %: %\n" currentFile processingError
             )
         )
         
