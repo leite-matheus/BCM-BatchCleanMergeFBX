@@ -5,6 +5,7 @@
  * Features:
  * 1. Delete all unnecessary objects (shapes, lights, cameras, helpers, etc.)
  * 2. Automatically select remaining geometry for merging
+ * 3. Always processes objects in batches for optimal memory management
  */
 
 -- Global utility function to update progress dialog
@@ -142,19 +143,26 @@ fn mergeByMaterial inputObjects = (
         return false
     )
     
-    -- Ask user about batch size preference for very large scenes
-    local batchSize = 50
-    local processingType = 1
+    -- Set default batch size for chunk processing
+    local batchSize = 25
     
+    -- Allow user to configure batch size for very large scenes
     if validObjectCount > 1000 then (
-        local response = queryBox ("Large scene detected with " + validObjectCount as string + " objects.\nProcess in batches to reduce memory usage?") title:"Performance Options"
-        
-        if response then processingType = 2
+        local batchSizeResponse = inputBox "Enter batch size for processing (smaller = less memory used but slower):" "25" title:"Configure Processing"
+        if batchSizeResponse != undefined then (
+            try (
+                batchSize = batchSizeResponse as integer
+                if batchSize < 5 then batchSize = 5
+                if batchSize > 100 then batchSize = 100
+            ) catch (
+                batchSize = 25
+            )
+        )
     )
     
     -- Display a simple progress message to user
     local startTime = timestamp()
-    format "Starting merge process for % material groups...\n" numGroups
+    format "Starting merge process for % material groups using batch size of %...\n" numGroups batchSize
     
     -- Process each material group
     local mergedObjects = #()
@@ -182,63 +190,32 @@ fn mergeByMaterial inputObjects = (
                 objGroup[1].name = mergedName
                 append mergedObjects objGroup[1]
             ) else (
-                -- Batch processing for large groups
-                if processingType == 2 and objGroup.count > batchSize then (
-                    -- Simple copy first object approach
-                    local baseMesh = objGroup[1]
-                    select baseMesh
+                -- Always use batch processing regardless of group size
+                local baseMesh = objGroup[1]
+                select baseMesh
+                
+                -- Convert base mesh to Editable_Poly
+                if classOf baseMesh != Editable_Poly then (
+                    convertTo baseMesh Editable_Poly
+                )
+                
+                -- Calculate number of batches needed
+                local numBatches = ceil((objGroup.count - 1) / batchSize as float)
+                
+                for batchNum = 1 to numBatches do (
+                    -- Calculate start and end indices for this batch
+                    local startIdx = (batchNum - 1) * batchSize + 2
+                    local endIdx = if (startIdx + batchSize - 1) < objGroup.count then (startIdx + batchSize - 1) else objGroup.count
                     
-                    -- Convert base mesh to Editable_Poly
-                    if classOf baseMesh != Editable_Poly then (
-                        convertTo baseMesh Editable_Poly
-                    )
+                    -- Update batch progress
+                    local batchProgress = percent + (100.0 / numGroups * batchNum / numBatches)
+                    updateProgress progressDialog batchProgress ("Material " + i as string + "/" + numGroups as string + " - Batch " + batchNum as string + "/" + numBatches as string)
                     
-                    -- Process in batches
-                    local numBatches = ceil((objGroup.count - 1) / batchSize as float)
+                    -- Show batch info in listener
+                    format "  Processing batch % of % (objects % to %)\n" batchNum numBatches startIdx endIdx
                     
-                    for batchNum = 1 to numBatches do (
-                        -- Calculate start and end indices for this batch
-                        local startIdx = (batchNum - 1) * batchSize + 2
-                        local endIdx = min (startIdx + batchSize - 1) objGroup.count
-                        
-                        -- Update batch progress
-                        local batchPercent = percent + (percent / numBatches * batchNum)
-                        updateProgress progressDialog batchPercent ("Batch " + batchNum as string + " of " + numBatches as string)
-                        
-                        -- Process this batch
-                        for j = startIdx to endIdx do (
-                            try (
-                                polyop.attach baseMesh objGroup[j]
-                            )
-                            catch (
-                                local errorMsg = "Warning: Failed to attach object " + objGroup[j].name
-                                format "%\n" errorMsg
-                                append logMessages ("  - " + errorMsg)
-                            )
-                        )
-                        
-                        -- Force garbage collection after each batch
-                        gc()
-                        
-                        -- Allow UI to update
-                        windows.processPostedMessages()
-                    )
-                    
-                    -- Rename and apply material
-                    baseMesh.name = mergedName
-                    baseMesh.material = groupMaterial
-                    append mergedObjects baseMesh
-                ) else ( -- Standard processing for smaller groups
-                    local baseMesh = objGroup[1]
-                    select baseMesh
-                    
-                    -- Convert to Editable_Poly for better performance
-                    if classOf baseMesh != Editable_Poly then (
-                        convertTo baseMesh Editable_Poly
-                    )
-                    
-                    -- Attach all other objects to the base mesh
-                    for j = 2 to objGroup.count do (
+                    -- Process this batch
+                    for j = startIdx to endIdx do (
                         try (
                             polyop.attach baseMesh objGroup[j]
                         )
@@ -247,16 +224,19 @@ fn mergeByMaterial inputObjects = (
                             format "%\n" errorMsg
                             append logMessages ("  - " + errorMsg)
                         )
-                        
-                        -- Periodically update UI to prevent freezing
-                        if (mod j 10) == 0 then windows.processPostedMessages()
                     )
                     
-                    -- Rename the resulting object
-                    baseMesh.name = mergedName
-                    baseMesh.material = groupMaterial
-                    append mergedObjects baseMesh
+                    -- Force garbage collection after each batch
+                    gc()
+                    
+                    -- Allow UI to update
+                    windows.processPostedMessages()
                 )
+                
+                -- Rename and apply material
+                baseMesh.name = mergedName
+                baseMesh.material = groupMaterial
+                append mergedObjects baseMesh
             )
         )
         
@@ -276,7 +256,7 @@ fn mergeByMaterial inputObjects = (
     
     -- Report results
     local resultMessage = "Merged " + validObjectCount as string + " objects into " + mergedObjects.count as string + " result objects.\n"
-    resultMessage += "Process completed in " + totalTime as string + " seconds."
+    resultMessage += "Process completed in " + totalTime as string + " seconds using batch size of " + batchSize as string + "."
     
     messageBox resultMessage title:"Merge Complete"
     format "%\n" resultMessage
