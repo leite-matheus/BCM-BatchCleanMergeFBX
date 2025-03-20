@@ -384,8 +384,8 @@ fn showImportSettingsDialog = (
             
             local selectedSortMode = case rdoSort.state of (
                 1: #alphabetical
-                2: #sizeAscending
-                3: #sizeDescending
+                2: #sizeDescending
+                3: #sizeAscending
                 default: #alphabetical
             )
             
