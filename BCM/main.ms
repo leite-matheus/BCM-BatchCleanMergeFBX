@@ -34,11 +34,11 @@ fn loadScriptFile filename = (
         ) catch (
             local errorMsg = getCurrentException()
             format "Error loading %: %\n" filename errorMsg
-            messageBox ("Failed to load " + filename + ":\n\n" + errorMsg) title:"Script Loading Error"
+            format "Failed to load " + filename + ":\n\n" + errorMsg + "\n"
         )
     ) else (
         format "Script file not found: %\n" filePath
-        messageBox ("Script file not found:\n" + filePath) title:"Missing File"
+        format "Script file not found:\n" + filePath + "\n"
     )
     
     success
@@ -63,7 +63,7 @@ importerLoaded = loadScriptFile "importer.ms"
 
 -- Check if all required scripts were loaded
 if not (cleanerLoaded and mergeLoaded and importerLoaded) then (
-    messageBox "One or more required scripts could not be loaded. The tool may not function correctly." title:"Script Loading Error"
+    format "One or more required scripts could not be loaded. The tool may not function correctly.\n"
     format "Script loading status:\n"
     format "  cleaner.ms: %\n" cleanerLoaded
     format "  merge.ms: %\n" mergeLoaded
@@ -79,7 +79,7 @@ fn cleanAndMergeScene = (
     if remainingGeometry != undefined and remainingGeometry.count > 0 then (
         mergeByMaterial remainingGeometry
     ) else (
-        messageBox "No geometry found to merge after cleanup." title:"No Geometry"
+        format "No geometry found to merge after cleanup.\n"
     )
 )
 
@@ -115,7 +115,7 @@ fn showMainToolUI = (
                 destroyDialog mainToolRollout
                 showImportSettingsDialog()
             ) else (
-                messageBox "Import functionality unavailable: script not loaded." title:"Error"
+                format "Import functionality unavailable: script not loaded.\n"
             )
         )
         
@@ -124,7 +124,7 @@ fn showMainToolUI = (
                 destroyDialog mainToolRollout
                 deleteAllUnwantedObjects()
             ) else (
-                messageBox "Clean functionality unavailable: script not loaded." title:"Error"
+                format "Clean functionality unavailable: script not loaded.\n"
             )
         )
         
@@ -133,7 +133,7 @@ fn showMainToolUI = (
                 destroyDialog mainToolRollout
                 mergeByMaterial (getCurrentSelection())
             ) else (
-                messageBox "Merge functionality unavailable: script not loaded." title:"Error"
+                format "Merge functionality unavailable: script not loaded.\n"
             )
         )
         
@@ -142,7 +142,7 @@ fn showMainToolUI = (
                 destroyDialog mainToolRollout
                 showImportSettingsDialog()
             ) else (
-                messageBox "Import functionality unavailable: script not loaded." title:"Error"
+                format "Import functionality unavailable: script not loaded.\n"
             )
         )
     )

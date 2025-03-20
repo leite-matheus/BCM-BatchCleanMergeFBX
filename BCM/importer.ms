@@ -137,7 +137,7 @@ fn batchImportFBX fileArray sortMode saveCleanedFiles cleanAfterImport mergeAfte
             errorMsg += "- " + func + "\n"
         )
         errorMsg += "\nPlease make sure all script files are correctly loaded."
-        messageBox errorMsg title:"Missing Functions"
+        format "%\n" errorMsg
         return false
     )
     
@@ -265,18 +265,16 @@ fn batchImportFBX fileArray sortMode saveCleanedFiles cleanAfterImport mergeAfte
     -- Close progress dialog
     try (destroyDialog progressDialog) catch()
     
-    -- Report results
+    -- Report results to listener only
     local resultMessage = "Import batch completed in " + elapsedTime as string + " seconds.\n"
     resultMessage += gImportStatus.successCount as string + " files imported successfully.\n"
     resultMessage += gImportStatus.failedCount as string + " files failed to import."
     
     if not gImportStatus.isCancelled then (
-        messageBox resultMessage title:"Batch Import Complete"
+        format "BATCH IMPORT COMPLETE: %\n" resultMessage
     ) else (
-        messageBox "Import process cancelled by user.\n" + resultMessage title:"Batch Import Cancelled"
+        format "BATCH IMPORT CANCELLED: %\n" resultMessage
     )
-    
-    format "%\n" resultMessage
     
     -- Return status
     gImportStatus
@@ -307,7 +305,7 @@ fn startFbxImport mode:#directory sortMode:#alphabetical cleanAfterImport:true m
                 fileArray = getFbxFilesInDirectory dirPath
                 
                 if fileArray.count == 0 then (
-                    messageBox "No FBX files found in the selected directory." title:"No Files Found"
+                    format "No FBX files found in the selected directory.\n"
                     return false
                 )
             ) else (
@@ -329,7 +327,7 @@ fn startFbxImport mode:#directory sortMode:#alphabetical cleanAfterImport:true m
         )
         
         default: (
-            messageBox "Invalid import mode specified." title:"Error"
+            format "Invalid import mode specified.\n"
             return false
         )
     )

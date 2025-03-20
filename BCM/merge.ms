@@ -98,26 +98,16 @@ fn mergeByMaterial inputObjects = (
         return false
     )
     
-    -- Set default batch size for chunk processing
-    local batchSize = 25
+    -- Set batch size based on scene size - automatically determined, no user input
+    local batchSize = 25  -- Default batch size
     
-    -- Allow user to configure batch size for very large scenes
-    if validObjectCount > 1000 then (
-        local batchSizeResponse = queryBox "Scene has many objects. Use default batch size (25)?\nYes = Use default, No = Configure" title:"Configure Processing"
-        
-        if not batchSizeResponse then (
-            local batchSizeValue = inputBox "Enter batch size for processing (smaller = less memory used but slower):" "25" title:"Configure Processing"
-            
-            if batchSizeValue != undefined then (
-                try (
-                    batchSize = batchSizeValue as integer
-                    if batchSize < 5 then batchSize = 5
-                    if batchSize > 100 then batchSize = 100
-                ) catch (
-                    batchSize = 25 -- Default if conversion fails
-                )
-            )
-        )
+    -- Adjust batch size based on object count
+    if validObjectCount > 5000 then (
+        batchSize = 10  -- Smaller batches for very large scenes
+    ) else if validObjectCount > 2000 then (
+        batchSize = 15  -- Medium batches for large scenes
+    ) else if validObjectCount < 500 then (
+        batchSize = 50  -- Larger batches for small scenes
     )
     
     -- Display a simple progress message to user
@@ -219,11 +209,10 @@ fn mergeByMaterial inputObjects = (
     -- Select all the merged objects
     select mergedObjects
     
-    -- Report results
+    -- Report results to listener only, no user prompt
     local resultMessage = "Merged " + validObjectCount as string + " objects into " + mergedObjects.count as string + " result objects.\n"
     resultMessage += "Process completed in " + totalTime as string + " seconds using batch size of " + batchSize as string + "."
     
-    messageBox resultMessage title:"Merge Complete"
     format "%\n" resultMessage
     
     -- Write log to MAXScript listener
